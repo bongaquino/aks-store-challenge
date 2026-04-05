@@ -2,5 +2,5 @@
   "name": "order-service",
   "version": "2.1.0",
   "scripts": { "start": "node index.js", "test": "echo ok" },
-  "dependencies": { "fastify": "^4.0.0" }
+  "dependencies": { "fastify": "^5.8.3" }
 }
