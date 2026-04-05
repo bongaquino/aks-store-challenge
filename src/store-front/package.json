@@ -1,0 +1,6 @@
+{
+  "name": "store-front",
+  "version": "2.1.0",
+  "scripts": { "start": "node server.js", "test": "echo ok", "build": "mkdir -p dist && cp index.html dist/" },
+  "dependencies": {}
+}

@@ -1,0 +1,6 @@
+{
+  "name": "product-service",
+  "version": "2.1.0",
+  "scripts": { "start": "node index.js", "test": "echo ok" },
+  "dependencies": { "express": "^4.0.0" }
+}
