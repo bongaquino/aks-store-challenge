@@ -84,8 +84,8 @@ jobs:
       - name: Deploy with Helm
         run: |
           helm upgrade --install aks-store ./helm/aks-store \
-            --set global.imageRegistry=${{ env.ACR_LOGIN_SERVER }} \
-            --set global.imageTag=${{ env.IMAGE_TAG }} \
+            # --set global.imageRegistry=${{ env.ACR_LOGIN_SERVER }} \
+            # --set global.imageTag=${{ env.IMAGE_TAG }} \
             --namespace aks-store-demo \
             --create-namespace \
             --wait --timeout 5m
