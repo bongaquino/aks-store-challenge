@@ -1,0 +1,58 @@
+global:
+  imageRegistry: "ghcr.io/azure-samples/aks-store-demo"
+  imageTag: "2.1.0"
+
+rabbitmq:
+  image: "mcr.microsoft.com/azurelinux/base/rabbitmq-server"
+  tag: "3.13"
+  replicas: 1
+  credentials:
+    username: "username"
+    password: "password"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+orderService:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1m
+      memory: 50Mi
+    limits:
+      cpu: 75m
+      memory: 128Mi
+
+productService:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1m
+      memory: 1Mi
+    limits:
+      cpu: 2m
+      memory: 20Mi
+
+storeFront:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1m
+      memory: 200Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+
+networkPolicies:
+  enabled: true

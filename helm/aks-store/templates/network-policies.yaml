@@ -1,0 +1,101 @@
+{{- if .Values.networkPolicies.enabled }}
+##############################################################################
+# Default deny all ingress — baseline zero-trust
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+##############################################################################
+# RabbitMQ — only order-service can reach it on 5672
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-rabbitmq-from-order-service
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: order-service
+      ports:
+        - protocol: TCP
+          port: 5672
+---
+##############################################################################
+# Order Service — only store-front can reach it on 3000
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-order-service-from-store-front
+spec:
+  podSelector:
+    matchLabels:
+      app: order-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: store-front
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+##############################################################################
+# Product Service — only store-front can reach it on 3002
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-product-service-from-store-front
+spec:
+  podSelector:
+    matchLabels:
+      app: product-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: store-front
+      ports:
+        - protocol: TCP
+          port: 3002
+---
+##############################################################################
+# Store Front — allow ingress controller to reach it on 8080
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-store-front-from-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: store-front
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}

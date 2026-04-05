@@ -1,0 +1,111 @@
+name: CI/CD – Build, Test & Deploy to AKS
+
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  acrLoginServer: "$(ACR_LOGIN_SERVER)"
+  aksClusterName: "$(AKS_CLUSTER_NAME)"
+  aksResourceGroup: "$(AKS_RESOURCE_GROUP)"
+  imageTag: "$(Build.BuildId)"
+  azureSubscription: "AzureServiceConnection"
+
+stages:
+  ############################################################################
+  # CI Stage
+  ############################################################################
+  - stage: CI
+    displayName: "Build & Test"
+    jobs:
+      - job: BuildAndTest
+        displayName: "Build, Test & Push"
+        pool:
+          vmImage: "ubuntu-latest"
+        strategy:
+          matrix:
+            order-service:
+              serviceName: "order-service"
+              serviceContext: "./src/order-service"
+              dockerfile: "./dockerfiles/order-service/Dockerfile"
+            product-service:
+              serviceName: "product-service"
+              serviceContext: "./src/product-service"
+              dockerfile: "./dockerfiles/product-service/Dockerfile"
+            store-front:
+              serviceName: "store-front"
+              serviceContext: "./src/store-front"
+              dockerfile: "./dockerfiles/store-front/Dockerfile"
+        steps:
+          - checkout: self
+
+          - script: |
+              cd $(serviceContext)
+              if [ -f package.json ]; then
+                npm ci
+                npm test --if-present
+              fi
+            displayName: "Run tests"
+
+          - task: Docker@2
+            displayName: "Build & Push image"
+            inputs:
+              command: buildAndPush
+              containerRegistry: $(azureSubscription)
+              repository: "aks-store-demo/$(serviceName)"
+              dockerfile: "$(dockerfile)"
+              buildContext: "$(serviceContext)"
+              tags: |
+                $(imageTag)
+                latest
+
+  ############################################################################
+  # CD Stage
+  ############################################################################
+  - stage: CD
+    displayName: "Deploy to AKS"
+    dependsOn: CI
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployToAKS
+        displayName: "Helm Deploy"
+        pool:
+          vmImage: "ubuntu-latest"
+        environment: "aks-store-demo"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: AzureCLI@2
+                  displayName: "Deploy with Helm"
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az aks get-credentials \
+                        --resource-group $(aksResourceGroup) \
+                        --name $(aksClusterName) \
+                        --overwrite-existing
+
+                      helm upgrade --install aks-store ./helm/aks-store \
+                        --set global.imageRegistry=$(acrLoginServer) \
+                        --set global.imageTag=$(imageTag) \
+                        --namespace aks-store-demo \
+                        --create-namespace \
+                        --wait --timeout 5m
+
+                - task: AzureCLI@2
+                  displayName: "Verify deployment"
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az aks get-credentials \
+                        --resource-group $(aksResourceGroup) \
+                        --name $(aksClusterName)
+                      kubectl get pods,svc,ingress -n aks-store-demo

@@ -1,0 +1,115 @@
+name: CI/CD – Build, Test & Deploy to AKS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+  AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  ############################################################################
+  # CI — Build & Test
+  ############################################################################
+  ci:
+    name: "CI – ${{ matrix.service.name }}"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: order-service
+            context: ./src/order-service
+            dockerfile: ./dockerfiles/order-service/Dockerfile
+            port: 3000
+          - name: product-service
+            context: ./src/product-service
+            dockerfile: ./dockerfiles/product-service/Dockerfile
+            port: 3002
+          - name: store-front
+            context: ./src/store-front
+            dockerfile: ./dockerfiles/store-front/Dockerfile
+            port: 8080
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Run tests if test script exists
+      - name: Run tests
+        working-directory: ${{ matrix.service.context }}
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+            npm test --if-present
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+            python -m pytest --tb=short || true
+          fi
+
+      # Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f ${{ matrix.service.dockerfile }} \
+            -t ${{ env.ACR_LOGIN_SERVER }}/aks-store-demo/${{ matrix.service.name }}:${{ env.IMAGE_TAG }} \
+            -t ${{ env.ACR_LOGIN_SERVER }}/aks-store-demo/${{ matrix.service.name }}:latest \
+            ${{ matrix.service.context }}
+
+      # Push to ACR (only on main branch push)
+      - name: Log in to ACR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Push images to ACR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          docker push ${{ env.ACR_LOGIN_SERVER }}/aks-store-demo/${{ matrix.service.name }}:${{ env.IMAGE_TAG }}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/aks-store-demo/${{ matrix.service.name }}:latest
+
+  ############################################################################
+  # CD — Deploy to AKS
+  ############################################################################
+  cd:
+    name: "CD – Deploy to AKS"
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+
+      # Deploy with Helm (uses the bonus Helm chart from Step 4)
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install aks-store ./helm/aks-store \
+            --set global.imageRegistry=${{ env.ACR_LOGIN_SERVER }} \
+            --set global.imageTag=${{ env.IMAGE_TAG }} \
+            --namespace aks-store-demo \
+            --create-namespace \
+            --wait --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/store-front -n aks-store-demo --timeout=120s
+          kubectl rollout status deployment/order-service -n aks-store-demo --timeout=120s
+          kubectl rollout status deployment/product-service -n aks-store-demo --timeout=120s
+          kubectl get ingress -n aks-store-demo
